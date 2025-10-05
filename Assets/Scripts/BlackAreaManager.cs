@@ -11,6 +11,9 @@ public class BlackAreaManager : MonoBehaviour
     public float playAreaWidth = 10f;
     public float playAreaHeight = 14f;
 
+    [Header("References")]
+    public SafeZoneManager safeZoneManager;
+
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
     private List<Vector2> blackPolygon; // 현재 검정 영역 (하나의 폴리곤)
@@ -322,5 +325,11 @@ public class BlackAreaManager : MonoBehaviour
 
         GenerateMesh();
         Debug.Log($"영역 제거 완료! 남은 점: {blackPolygon.Count}개");
+
+        // SafeZoneManager 테두리 업데이트
+        if (safeZoneManager != null)
+        {
+            safeZoneManager.UpdateBorder(blackPolygon);
+        }
     }
 }

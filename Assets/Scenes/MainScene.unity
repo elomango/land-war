@@ -2126,6 +2126,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playAreaWidth: 10
   playAreaHeight: 14
+  safeZoneManager: {fileID: 130317541}
 --- !u!1 &1048767660
 GameObject:
   m_ObjectHideFlags: 0

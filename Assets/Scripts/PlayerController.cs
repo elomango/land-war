@@ -105,9 +105,18 @@ public class PlayerController : MonoBehaviour
             Vector3 movement = (Vector3)input * moveSpeed * Time.deltaTime;
             transform.position += movement;
 
-            // 경로 기록
-            capturePath.Add(transform.position);
-            UpdatePathLine();
+            // 플레이 영역 안에 제한
+            float clampedX = Mathf.Clamp(transform.position.x, -halfWidth, halfWidth);
+            float clampedY = Mathf.Clamp(transform.position.y, -halfHeight, halfHeight);
+            transform.position = new Vector3(clampedX, clampedY, 0);
+
+            // 경로 기록 - 일정 거리 이상 이동했을 때만 점 추가
+            float minDistance = 0.1f; // 최소 거리
+            if (capturePath.Count == 0 || Vector3.Distance(transform.position, capturePath[capturePath.Count - 1]) >= minDistance)
+            {
+                capturePath.Add(transform.position);
+                UpdatePathLine();
+            }
 
             // 안전지대를 벗어났는지 체크
             Vector3 snappedPos;
@@ -197,10 +206,7 @@ public class PlayerController : MonoBehaviour
     {
         Debug.Log($"영역 점령 완료! 시작점: {captureStartPosition}, 도착점: {snappedPosition}");
 
-        // 스냅된 도착점을 경로에 추가
-        capturePath.Add(snappedPosition);
-
-        // 시작점과 도착점을 테두리를 따라 연결
+        // 시작점과 도착점을 테두리를 따라 연결 (CloseCapturePathAlongBorder에서 점들을 추가함)
         CloseCapturePathAlongBorder(captureStartPosition, snappedPosition);
 
         // 플레이어 위치도 스냅
@@ -229,17 +235,28 @@ public class PlayerController : MonoBehaviour
         int startEdge = GetEdge(startPos);
         int endEdge = GetEdge(endPos);
 
-        // 같은 변에 있으면 그냥 시작점 추가해서 닫기
+        // 같은 변에 있으면 endPos와 startPos만 추가
         if (startEdge == endEdge)
         {
+            // capturePath 마지막 점과 endPos가 다르면 추가
+            if (capturePath.Count == 0 || Vector3.Distance(capturePath[capturePath.Count - 1], endPos) > 0.01f)
+            {
+                capturePath.Add(endPos);
+            }
             capturePath.Add(startPos);
             return;
         }
 
         // 다른 변에 있으면 테두리를 따라 연결
         // 시계방향과 반시계방향 두 경로를 만들고 작은 영역 선택
-        List<Vector3> clockwisePath = GetBorderPath(endPos, startPos, true);
-        List<Vector3> counterClockwisePath = GetBorderPath(endPos, startPos, false);
+        // GetBorderPath는 from을 포함하지 않으므로, 여기서 endPos 추가
+        List<Vector3> clockwisePath = new List<Vector3>();
+        clockwisePath.Add(endPos);
+        clockwisePath.AddRange(GetBorderPath(endPos, startPos, true));
+
+        List<Vector3> counterClockwisePath = new List<Vector3>();
+        counterClockwisePath.Add(endPos);
+        counterClockwisePath.AddRange(GetBorderPath(endPos, startPos, false));
 
         // 두 경로의 면적 계산
         List<Vector3> tempPathCW = new List<Vector3>(capturePath);
@@ -291,7 +308,7 @@ public class PlayerController : MonoBehaviour
     {
         List<Vector3> path = new List<Vector3>();
 
-        // 4개 모서리
+        // 4개 모서리 (시계방향 순서: 좌하→우하→우상→좌상)
         Vector3[] corners = new Vector3[]
         {
             new Vector3(-halfWidth, -halfHeight, 0), // 0: 좌하
@@ -303,25 +320,34 @@ public class PlayerController : MonoBehaviour
         int fromEdge = GetEdge(from);
         int toEdge = GetEdge(to);
 
-        // 모서리 순서 (시계방향: 0→1→2→3, 반시계방향: 0→3→2→1)
-        int current = fromEdge;
-        int target = toEdge;
+        // 각 엣지에서 시계방향으로 갈 때 다음에 만나는 모서리
+        // 하단(0)→우하(1), 우측(1)→우상(2), 상단(2)→좌상(3), 좌측(3)→좌하(0)
+        int[] edgeToNextCorner = new int[] { 1, 2, 3, 0 };
 
-        while (current != target)
+        // 각 엣지에서 반시계방향으로 갈 때 다음에 만나는 모서리
+        // 하단(0)→좌하(0), 우측(1)→우하(1), 상단(2)→우상(2), 좌측(3)→좌상(3)
+        int[] edgeToPrevCorner = new int[] { 0, 1, 2, 3 };
+
+        int currentCorner = clockwise ? edgeToNextCorner[fromEdge] : edgeToPrevCorner[fromEdge];
+        int targetCorner = clockwise ? edgeToPrevCorner[toEdge] : edgeToNextCorner[toEdge];
+
+        // 모서리 순회
+        while (currentCorner != targetCorner)
         {
-            // 다음 모서리로 이동
+            path.Add(corners[currentCorner]);
+
             if (clockwise)
             {
-                current = (current + 1) % 4;
+                currentCorner = (currentCorner + 1) % 4;
             }
             else
             {
-                current = (current - 1 + 4) % 4;
+                currentCorner = (currentCorner - 1 + 4) % 4;
             }
-
-            // 해당 모서리 추가
-            path.Add(corners[current]);
         }
+
+        // 마지막 모서리 추가
+        path.Add(corners[targetCorner]);
 
         // 도착점 추가
         path.Add(to);
