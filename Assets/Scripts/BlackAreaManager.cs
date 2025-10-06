@@ -200,11 +200,11 @@ public class BlackAreaManager : MonoBehaviour
         Debug.Log($"캡처 경로 점 개수: {capturePath.Count}");
         Debug.Log($"첫 점: {capturePath[0]}, 마지막 점: {capturePath[capturePath.Count - 1]}");
 
-        // Unity Vector3 → Clipper2 PathD 변환 (scale up for precision)
+        // Unity Vector3 → Clipper2 PathD 변환
         PathD capturePoly = new PathD();
         foreach (var point in capturePath)
         {
-            capturePoly.Add(new PointD(point.x * 100, point.y * 100));
+            capturePoly.Add(new PointD(point.x, point.y));
         }
 
         // 폴리곤 방향 확인 및 수정 (반시계방향이어야 함)
@@ -219,7 +219,7 @@ public class BlackAreaManager : MonoBehaviour
         PathD blackPoly = new PathD();
         foreach (var point in blackPolygon)
         {
-            blackPoly.Add(new PointD(point.x * 100, point.y * 100));
+            blackPoly.Add(new PointD(point.x, point.y));
         }
 
         Debug.Log($"Clipper2 - 캡처 폴리곤: {capturePoly.Count}점, 검정 폴리곤: {blackPoly.Count}점");
@@ -316,11 +316,11 @@ public class BlackAreaManager : MonoBehaviour
             resultPoly.Reverse();
         }
 
-        // Clipper2 PathD → Unity Vector2 변환 (scale down)
+        // Clipper2 PathD → Unity Vector2 변환
         blackPolygon.Clear();
         foreach (var point in resultPoly)
         {
-            blackPolygon.Add(new Vector2((float)point.x / 100f, (float)point.y / 100f));
+            blackPolygon.Add(new Vector2((float)point.x, (float)point.y));
         }
 
         GenerateMesh();

@@ -145,7 +145,7 @@ public class PlayerController : MonoBehaviour
             }
 
             // 점령 완료 조건: 안전지대를 벗어났다가 다시 돌아옴 + 시작점에서 충분히 멀어짐
-            if (hasLeftSafeZone && onSafeZone && Vector3.Distance(transform.position, captureStartPosition) > 0.5f)
+            if (hasLeftSafeZone && onSafeZone && Vector3.Distance(transform.position, captureStartPosition) > 0.2f)
             {
                 CompleteCaptureTest(snappedPos);
             }
@@ -221,6 +221,16 @@ public class PlayerController : MonoBehaviour
         // 시작점과 도착점을 테두리를 따라 연결 (CloseCapturePathAlongBorder에서 점들을 추가함)
         CloseCapturePathAlongBorder(captureStartPosition, snappedPosition);
 
+        // capturePath 전체 출력 (디버깅용)
+        Debug.Log("=== capturePath 전체 출력 ===");
+        for (int i = 0; i < capturePath.Count; i++)
+        {
+            Debug.Log($"  점 {i}: {capturePath[i]}");
+        }
+
+        // 경로 검증 (사선 체크)
+        ValidatePath();
+
         // 플레이어 위치도 스냅
         transform.position = snappedPosition;
 
@@ -236,6 +246,28 @@ public class PlayerController : MonoBehaviour
         // 상태 복귀
         currentState = PlayerState.OnSafeZone;
         ClearPath();
+    }
+
+    // 경로 검증: 연속된 점들이 직각(x 또는 y 같음)인지 체크
+    void ValidatePath()
+    {
+        float tolerance = 0.01f; // 부동소수점 오차 허용
+
+        for (int i = 0; i < capturePath.Count - 1; i++)
+        {
+            Vector3 p1 = capturePath[i];
+            Vector3 p2 = capturePath[i + 1];
+
+            bool xSame = Mathf.Abs(p1.x - p2.x) < tolerance;
+            bool ySame = Mathf.Abs(p1.y - p2.y) < tolerance;
+
+            // x나 y 중 하나는 반드시 같아야 함 (직각)
+            if (!xSame && !ySame)
+            {
+                Debug.LogError($"❌ 사선 발견! 점 {i} → {i+1}: {p1} → {p2}");
+                Debug.LogError($"   X 차이: {Mathf.Abs(p1.x - p2.x):F4}, Y 차이: {Mathf.Abs(p1.y - p2.y):F4}");
+            }
+        }
     }
 
     void CloseCapturePathAlongBorder(Vector3 startPos, Vector3 endPos)
@@ -296,6 +328,7 @@ public class PlayerController : MonoBehaviour
             currentIndex = (currentIndex - 1 + currentBorderPolygon.Count) % currentBorderPolygon.Count;
         }
 
+        counterClockwisePath.Add(new Vector3(currentBorderPolygon[targetIndex].x, currentBorderPolygon[targetIndex].y, 0));
         counterClockwisePath.Add(startPos);
 
         // 두 경로 중 작은 영역 선택
