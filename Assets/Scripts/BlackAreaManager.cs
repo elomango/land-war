@@ -197,9 +197,6 @@ public class BlackAreaManager : MonoBehaviour
             return;
         }
 
-        Debug.Log($"캡처 경로 점 개수: {capturePath.Count}");
-        Debug.Log($"첫 점: {capturePath[0]}, 마지막 점: {capturePath[capturePath.Count - 1]}");
-
         // Unity Vector3 → Clipper2 PathD 변환
         PathD capturePoly = new PathD();
         foreach (var point in capturePath)
@@ -211,7 +208,6 @@ public class BlackAreaManager : MonoBehaviour
         double captureArea = Clipper.Area(capturePoly);
         if (captureArea < 0)
         {
-            Debug.Log("캡처 경로 방향 반전 필요");
             capturePoly.Reverse();
         }
 
@@ -222,9 +218,6 @@ public class BlackAreaManager : MonoBehaviour
             blackPoly.Add(new PointD(point.x, point.y));
         }
 
-        Debug.Log($"Clipper2 - 캡처 폴리곤: {capturePoly.Count}점, 검정 폴리곤: {blackPoly.Count}점");
-        Debug.Log($"캡처 영역 넓이: {Clipper.Area(capturePoly)}, 검정 영역 넓이: {Clipper.Area(blackPoly)}");
-
         // 1단계: 캡처 경로와 검정 영역의 교집합 구하기 (실제 점령 영역)
         PathsD intersection = Clipper.Intersect(
             new PathsD { blackPoly },
@@ -232,16 +225,11 @@ public class BlackAreaManager : MonoBehaviour
             FillRule.NonZero
         );
 
-        Debug.Log($"교집합(실제 점령 영역): {intersection.Count}개");
         if (intersection.Count == 0)
         {
             Debug.LogWarning("캡처 영역이 검정 영역과 겹치지 않습니다.");
             return;
         }
-
-        // 교집합 넓이 확인
-        double intersectionArea = Math.Abs(Clipper.Area(intersection[0]));
-        Debug.Log($"점령 영역 넓이: {intersectionArea}");
 
         // 2단계: 검정 영역에서 점령 영역 제거
         PathsD solution = Clipper.Difference(
@@ -249,12 +237,6 @@ public class BlackAreaManager : MonoBehaviour
             intersection,
             FillRule.NonZero
         );
-
-        Debug.Log($"Clipper2 결과: {solution.Count}개의 폴리곤");
-        for (int i = 0; i < solution.Count; i++)
-        {
-            Debug.Log($"결과 폴리곤 {i}: 점 개수 {solution[i].Count}, 넓이: {Clipper.Area(solution[i])}");
-        }
 
         // 결과가 없으면 (전체 영역 제거됨)
         if (solution.Count == 0)
@@ -308,8 +290,6 @@ public class BlackAreaManager : MonoBehaviour
             return;
         }
 
-        Debug.Log($"선택된 폴리곤: {resultIndex}번, 넓이: {resultArea} (원본: {originalArea})");
-
         // 폴리곤 방향 확인 (양수 넓이여야 함)
         if (Clipper.Area(resultPoly) < 0)
         {
@@ -330,7 +310,6 @@ public class BlackAreaManager : MonoBehaviour
         RemoveDuplicatePoints(blackPolygon, gridSize * 0.5f);
 
         GenerateMesh();
-        Debug.Log($"영역 제거 완료! 남은 점: {blackPolygon.Count}개");
 
         // SafeZoneManager 테두리 업데이트
         if (safeZoneManager != null)

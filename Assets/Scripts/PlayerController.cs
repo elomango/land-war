@@ -293,6 +293,39 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        // 사선 방지: 선분 방향에 맞춰 startPos와 endPos 조정
+        Vector2 startP1 = currentBorderPolygon[startEdgeIndex];
+        Vector2 startP2 = currentBorderPolygon[(startEdgeIndex + 1) % currentBorderPolygon.Count];
+        Vector2 endP1 = currentBorderPolygon[endEdgeIndex];
+        Vector2 endP2 = currentBorderPolygon[(endEdgeIndex + 1) % currentBorderPolygon.Count];
+
+        bool startIsVertical = Mathf.Abs(startP1.x - startP2.x) < 0.01f;  // 수직 선분
+        bool endIsVertical = Mathf.Abs(endP1.x - endP2.x) < 0.01f;        // 수직 선분
+
+        // 방향에 따라 조정
+        if (startIsVertical && endIsVertical)
+        {
+            // 둘 다 수직(X 고정) → Y를 맞춤
+            startPos.y = endPos.y;
+        }
+        else if (!startIsVertical && !endIsVertical)
+        {
+            // 둘 다 수평(Y 고정) → X를 맞춤
+            startPos.x = endPos.x;
+        }
+        else if (startIsVertical && !endIsVertical)
+        {
+            // start는 수직(X 고정), end는 수평(Y 고정)
+            // startPos의 Y를 endPos의 Y에 맞춤
+            startPos.y = endPos.y;
+        }
+        else
+        {
+            // start는 수평(Y 고정), end는 수직(X 고정)
+            // startPos의 X를 endPos의 X에 맞춤
+            startPos.x = endPos.x;
+        }
+
         // 같은 선분에 있으면 직선 연결
         if (startEdgeIndex == endEdgeIndex)
         {
@@ -353,6 +386,12 @@ public class PlayerController : MonoBehaviour
         foreach (var point in smallerPath)
         {
             capturePath.Add(point);
+        }
+
+        // capturePath[0]도 조정된 startPos로 업데이트 (닫힌 폴리곤)
+        if (capturePath.Count > 0)
+        {
+            capturePath[0] = startPos;
         }
     }
 
