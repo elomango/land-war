@@ -35,7 +35,9 @@ public class PlayerController : MonoBehaviour
 
     // 동적 안전영역 관련
     private List<Vector2> currentBorderPolygon; // 현재 안전영역 폴리곤
-    private const float gridSize = 0.05f; // 그리드 크기
+
+    [Header("Grid Settings")]
+    [SerializeField] private float gridSize = 0.05f; // 그리드 크기 (최소 이동 단위)
 
     void Start()
     {
@@ -150,7 +152,8 @@ public class PlayerController : MonoBehaviour
             }
 
             // 점령 완료 조건: 안전지대를 벗어났다가 다시 돌아옴 + 시작점에서 충분히 멀어짐
-            if (hasLeftSafeZone && onSafeZone && Vector3.Distance(transform.position, captureStartPosition) > 0.2f)
+            // 최소 거리 = 그리드 크기 * 2 (왕복 최소 거리)
+            if (hasLeftSafeZone && onSafeZone && Vector3.Distance(transform.position, captureStartPosition) > gridSize * 2f)
             {
                 CompleteCaptureTest(snappedPos);
             }
@@ -179,7 +182,7 @@ public class PlayerController : MonoBehaviour
     bool IsOnSafeZone(out Vector3 snappedPosition)
     {
         Vector3 pos = transform.position;
-        float threshold = 0.15f;
+        float threshold = gridSize;
 
         // 동적 폴리곤 기반 테두리 체크
         if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
@@ -291,6 +294,41 @@ public class PlayerController : MonoBehaviour
         {
             Debug.LogError($"시작점 또는 도착점이 테두리에 없음: startEdge={startEdgeIndex}, endEdge={endEdgeIndex}");
             return;
+        }
+
+        // 마지막 움직임과 도착 지점 사이의 미세한 차이 조정
+        if (capturePath.Count >= 2)
+        {
+            Vector3 lastPoint = capturePath[capturePath.Count - 1];
+            Vector3 prevPoint = capturePath[capturePath.Count - 2];
+
+            float xDiff = Mathf.Abs(lastPoint.x - prevPoint.x);
+            float yDiff = Mathf.Abs(lastPoint.y - prevPoint.y);
+
+            const float kDiffThreshold = 0.1f;
+
+            Debug.Log($"=== 마지막 점 조정 체크 ===");
+            Debug.Log($"  prevPoint: {prevPoint}, lastPoint: {lastPoint}, endPos: {endPos}");
+            Debug.Log($"  xDiff: {xDiff}, yDiff: {yDiff}");
+
+            // 수평 이동 (Y가 같음)이었고, endPos와 Y 차이가 작으면
+            if (yDiff < 0.01f && Mathf.Abs(lastPoint.y - endPos.y) <= kDiffThreshold)
+            {
+                Debug.Log($"  수평 이동 조정: lastPoint.y {lastPoint.y} → {endPos.y}");
+                lastPoint.y = endPos.y;
+                capturePath[capturePath.Count - 1] = lastPoint;
+            }
+            // 수직 이동 (X가 같음)이었고, endPos와 X 차이가 작으면
+            else if (xDiff < 0.01f && Mathf.Abs(lastPoint.x - endPos.x) <= kDiffThreshold)
+            {
+                Debug.Log($"  수직 이동 조정: lastPoint.x {lastPoint.x} → {endPos.x}");
+                lastPoint.x = endPos.x;
+                capturePath[capturePath.Count - 1] = lastPoint;
+            }
+            else
+            {
+                Debug.Log($"  조정 안 함");
+            }
         }
 
         // 사선 방지: 선분 방향에 맞춰 startPos와 endPos 조정

@@ -14,6 +14,9 @@ public class BlackAreaManager : MonoBehaviour
     [Header("References")]
     public SafeZoneManager safeZoneManager;
 
+    [Header("Grid Settings")]
+    [SerializeField] private float gridSize = 0.05f; // 그리드 크기 (좌표 스냅 단위)
+
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
     private List<Vector2> blackPolygon; // 현재 검정 영역 (하나의 폴리곤)
@@ -296,9 +299,8 @@ public class BlackAreaManager : MonoBehaviour
             resultPoly.Reverse();
         }
 
-        // Clipper2 PathD → Unity Vector2 변환 (0.05 grid에 스냅)
+        // Clipper2 PathD → Unity Vector2 변환 (grid에 스냅)
         blackPolygon.Clear();
-        float gridSize = 0.05f;
         foreach (var point in resultPoly)
         {
             float x = Mathf.Round((float)point.x / gridSize) * gridSize;
