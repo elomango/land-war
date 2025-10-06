@@ -31,6 +31,7 @@ public class PlayerController : MonoBehaviour
     private List<Vector3> capturePath = new List<Vector3>();
     private LineRenderer pathLine;
     private bool hasLeftSafeZone = false; // 안전지대를 벗어났는지 체크
+    private Vector2 previousInputDirection = Vector2.zero; // 이전 입력 방향 (꼭지점 감지용)
 
     // 동적 안전영역 관련
     private List<Vector2> currentBorderPolygon; // 현재 안전영역 폴리곤
@@ -104,7 +105,25 @@ public class PlayerController : MonoBehaviour
         if (input != Vector2.zero)
         {
             transform.localScale = originalScale;
-            Vector3 movement = (Vector3)input * moveSpeed * Time.deltaTime;
+
+            // 입력 방향 정규화 (4방향으로 스냅)
+            Vector2 normalizedInput = NormalizeToFourDirections(input);
+
+            // 방향 전환 감지 → 꼭지점 추가
+            if (normalizedInput != previousInputDirection && previousInputDirection != Vector2.zero)
+            {
+                // 방향이 바뀌었으므로 현재 위치를 꼭지점으로 추가
+                if (capturePath.Count == 0 || Vector3.Distance(transform.position, capturePath[capturePath.Count - 1]) >= 0.1f)
+                {
+                    capturePath.Add(transform.position);
+                }
+            }
+
+            // 이전 방향 업데이트
+            previousInputDirection = normalizedInput;
+
+            // 이동
+            Vector3 movement = (Vector3)normalizedInput * moveSpeed * Time.deltaTime;
             transform.position += movement;
 
             // 플레이 영역 안에 제한
@@ -112,13 +131,8 @@ public class PlayerController : MonoBehaviour
             float clampedY = Mathf.Clamp(transform.position.y, -halfHeight, halfHeight);
             transform.position = new Vector3(clampedX, clampedY, 0);
 
-            // 경로 기록 - 일정 거리 이상 이동했을 때만 점 추가
-            float minDistance = 0.1f; // 최소 거리
-            if (capturePath.Count == 0 || Vector3.Distance(transform.position, capturePath[capturePath.Count - 1]) >= minDistance)
-            {
-                capturePath.Add(transform.position);
-                UpdatePathLine();
-            }
+            // 노란색 경로 라인 실시간 업데이트 (매 프레임)
+            UpdatePathLine();
 
             // 안전지대를 벗어났는지 체크
             Vector3 snappedPos;
@@ -135,6 +149,25 @@ public class PlayerController : MonoBehaviour
             {
                 CompleteCaptureTest(snappedPos);
             }
+        }
+    }
+
+    // 입력을 4방향(상하좌우)으로 정규화
+    Vector2 NormalizeToFourDirections(Vector2 input)
+    {
+        if (input == Vector2.zero)
+            return Vector2.zero;
+
+        // X축과 Y축 중 절댓값이 큰 쪽으로 스냅
+        if (Mathf.Abs(input.x) > Mathf.Abs(input.y))
+        {
+            // 좌우 이동
+            return input.x > 0 ? Vector2.right : Vector2.left;
+        }
+        else
+        {
+            // 상하 이동
+            return input.y > 0 ? Vector2.up : Vector2.down;
         }
     }
 
@@ -495,6 +528,7 @@ public class PlayerController : MonoBehaviour
             capturePath.Clear();
             capturePath.Add(captureStartPosition);
             hasLeftSafeZone = false; // 초기화
+            previousInputDirection = Vector2.zero; // 방향 초기화
             Debug.Log("영역 점령 시작!");
         }
     }
@@ -514,8 +548,31 @@ public class PlayerController : MonoBehaviour
 
     void UpdatePathLine()
     {
-        pathLine.positionCount = capturePath.Count;
-        pathLine.SetPositions(capturePath.ToArray());
+        // capturePath (꼭지점들) + 현재 플레이어 위치까지 표시
+        if (capturePath.Count == 0)
+        {
+            pathLine.positionCount = 0;
+            return;
+        }
+
+        // capturePath의 마지막 점이 현재 위치와 다르면 현재 위치 추가
+        Vector3[] pathPoints;
+        if (capturePath[capturePath.Count - 1] != transform.position)
+        {
+            pathPoints = new Vector3[capturePath.Count + 1];
+            for (int i = 0; i < capturePath.Count; i++)
+            {
+                pathPoints[i] = capturePath[i];
+            }
+            pathPoints[capturePath.Count] = transform.position; // 현재 위치 추가
+        }
+        else
+        {
+            pathPoints = capturePath.ToArray();
+        }
+
+        pathLine.positionCount = pathPoints.Length;
+        pathLine.SetPositions(pathPoints);
     }
 
     void ClearPath()
