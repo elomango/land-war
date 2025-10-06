@@ -240,20 +240,25 @@ public class PlayerController : MonoBehaviour
 
     void CloseCapturePathAlongBorder(Vector3 startPos, Vector3 endPos)
     {
-        // 4개 모서리
-        Vector3 bottomLeft = new Vector3(-halfWidth, -halfHeight, 0);
-        Vector3 bottomRight = new Vector3(halfWidth, -halfHeight, 0);
-        Vector3 topRight = new Vector3(halfWidth, halfHeight, 0);
-        Vector3 topLeft = new Vector3(-halfWidth, halfHeight, 0);
-
-        // 시작점과 도착점이 어느 변에 있는지 판단
-        int startEdge = GetEdge(startPos);
-        int endEdge = GetEdge(endPos);
-
-        // 같은 변에 있으면 endPos와 startPos만 추가
-        if (startEdge == endEdge)
+        if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
         {
-            // capturePath 마지막 점과 endPos가 다르면 추가
+            Debug.LogError("currentBorderPolygon이 없습니다");
+            return;
+        }
+
+        // 시작점과 도착점이 어느 선분에 있는지 찾기
+        int startEdgeIndex = FindEdgeIndex(startPos);
+        int endEdgeIndex = FindEdgeIndex(endPos);
+
+        if (startEdgeIndex == -1 || endEdgeIndex == -1)
+        {
+            Debug.LogError($"시작점 또는 도착점이 테두리에 없음: startEdge={startEdgeIndex}, endEdge={endEdgeIndex}");
+            return;
+        }
+
+        // 같은 선분에 있으면 직선 연결
+        if (startEdgeIndex == endEdgeIndex)
+        {
             if (capturePath.Count == 0 || Vector3.Distance(capturePath[capturePath.Count - 1], endPos) > 0.01f)
             {
                 capturePath.Add(endPos);
@@ -262,18 +267,38 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // 다른 변에 있으면 테두리를 따라 연결
-        // 시계방향과 반시계방향 두 경로를 만들고 작은 영역 선택
-        // GetBorderPath는 from을 포함하지 않으므로, 여기서 endPos 추가
+        // 다른 선분 → 시계/반시계 경로 생성
+
+        // 시계방향 경로
         List<Vector3> clockwisePath = new List<Vector3>();
         clockwisePath.Add(endPos);
-        clockwisePath.AddRange(GetBorderPath(endPos, startPos, true));
 
+        int currentIndex = (endEdgeIndex + 1) % currentBorderPolygon.Count;
+        while (currentIndex != startEdgeIndex)
+        {
+            clockwisePath.Add(new Vector3(currentBorderPolygon[currentIndex].x, currentBorderPolygon[currentIndex].y, 0));
+            currentIndex = (currentIndex + 1) % currentBorderPolygon.Count;
+        }
+
+        clockwisePath.Add(new Vector3(currentBorderPolygon[startEdgeIndex].x, currentBorderPolygon[startEdgeIndex].y, 0));
+        clockwisePath.Add(startPos);
+
+        // 반시계방향 경로
         List<Vector3> counterClockwisePath = new List<Vector3>();
         counterClockwisePath.Add(endPos);
-        counterClockwisePath.AddRange(GetBorderPath(endPos, startPos, false));
 
-        // 두 경로의 면적 계산
+        currentIndex = endEdgeIndex;
+        int targetIndex = (startEdgeIndex + 1) % currentBorderPolygon.Count;
+
+        while (currentIndex != targetIndex)
+        {
+            counterClockwisePath.Add(new Vector3(currentBorderPolygon[currentIndex].x, currentBorderPolygon[currentIndex].y, 0));
+            currentIndex = (currentIndex - 1 + currentBorderPolygon.Count) % currentBorderPolygon.Count;
+        }
+
+        counterClockwisePath.Add(startPos);
+
+        // 두 경로 중 작은 영역 선택
         List<Vector3> tempPathCW = new List<Vector3>(capturePath);
         tempPathCW.AddRange(clockwisePath);
         float areaCW = CalculatePolygonArea(tempPathCW);
@@ -282,7 +307,6 @@ public class PlayerController : MonoBehaviour
         tempPathCCW.AddRange(counterClockwisePath);
         float areaCCW = CalculatePolygonArea(tempPathCCW);
 
-        // 면적이 작은 쪽 선택
         List<Vector3> smallerPath = Mathf.Abs(areaCW) <= Mathf.Abs(areaCCW) ? clockwisePath : counterClockwisePath;
 
         Debug.Log($"시계방향: {clockwisePath.Count}개(면적:{areaCW}), 반시계방향: {counterClockwisePath.Count}개(면적:{areaCCW}), 선택: {(smallerPath == clockwisePath ? "시계" : "반시계")}");
@@ -292,6 +316,32 @@ public class PlayerController : MonoBehaviour
         {
             capturePath.Add(point);
         }
+    }
+
+    // 주어진 위치가 어느 선분에 있는지 찾기
+    int FindEdgeIndex(Vector3 pos)
+    {
+        if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
+            return -1;
+
+        float threshold = 0.15f; // IsOnSafeZone과 동일한 임계값
+        Vector2 pos2D = new Vector2(pos.x, pos.y);
+
+        for (int i = 0; i < currentBorderPolygon.Count; i++)
+        {
+            Vector2 p1 = currentBorderPolygon[i];
+            Vector2 p2 = currentBorderPolygon[(i + 1) % currentBorderPolygon.Count];
+
+            Vector2 closestPoint = ClosestPointOnLineSegment(pos2D, p1, p2);
+            float distance = Vector2.Distance(pos2D, closestPoint);
+
+            if (distance < threshold)
+            {
+                return i; // 선분 인덱스 반환
+            }
+        }
+
+        return -1; // 테두리에 없음
     }
 
     float CalculatePolygonArea(List<Vector3> polygon)
@@ -307,67 +357,6 @@ public class PlayerController : MonoBehaviour
             area += (current.x * next.y) - (next.x * current.y);
         }
         return area / 2f;
-    }
-
-    int GetEdge(Vector3 pos)
-    {
-        // 0: 하단, 1: 우측, 2: 상단, 3: 좌측
-        if (Mathf.Approximately(pos.y, -halfHeight)) return 0; // 하단
-        if (Mathf.Approximately(pos.x, halfWidth)) return 1;   // 우측
-        if (Mathf.Approximately(pos.y, halfHeight)) return 2;  // 상단
-        if (Mathf.Approximately(pos.x, -halfWidth)) return 3;  // 좌측
-        return -1; // 테두리가 아님
-    }
-
-    List<Vector3> GetBorderPath(Vector3 from, Vector3 to, bool clockwise)
-    {
-        List<Vector3> path = new List<Vector3>();
-
-        // 4개 모서리 (시계방향 순서: 좌하→우하→우상→좌상)
-        Vector3[] corners = new Vector3[]
-        {
-            new Vector3(-halfWidth, -halfHeight, 0), // 0: 좌하
-            new Vector3(halfWidth, -halfHeight, 0),  // 1: 우하
-            new Vector3(halfWidth, halfHeight, 0),   // 2: 우상
-            new Vector3(-halfWidth, halfHeight, 0)   // 3: 좌상
-        };
-
-        int fromEdge = GetEdge(from);
-        int toEdge = GetEdge(to);
-
-        // 각 엣지에서 시계방향으로 갈 때 다음에 만나는 모서리
-        // 하단(0)→우하(1), 우측(1)→우상(2), 상단(2)→좌상(3), 좌측(3)→좌하(0)
-        int[] edgeToNextCorner = new int[] { 1, 2, 3, 0 };
-
-        // 각 엣지에서 반시계방향으로 갈 때 다음에 만나는 모서리
-        // 하단(0)→좌하(0), 우측(1)→우하(1), 상단(2)→우상(2), 좌측(3)→좌상(3)
-        int[] edgeToPrevCorner = new int[] { 0, 1, 2, 3 };
-
-        int currentCorner = clockwise ? edgeToNextCorner[fromEdge] : edgeToPrevCorner[fromEdge];
-        int targetCorner = clockwise ? edgeToPrevCorner[toEdge] : edgeToNextCorner[toEdge];
-
-        // 모서리 순회
-        while (currentCorner != targetCorner)
-        {
-            path.Add(corners[currentCorner]);
-
-            if (clockwise)
-            {
-                currentCorner = (currentCorner + 1) % 4;
-            }
-            else
-            {
-                currentCorner = (currentCorner - 1 + 4) % 4;
-            }
-        }
-
-        // 마지막 모서리 추가
-        path.Add(corners[targetCorner]);
-
-        // 도착점 추가
-        path.Add(to);
-
-        return path;
     }
 
     void UpdateReturning()
