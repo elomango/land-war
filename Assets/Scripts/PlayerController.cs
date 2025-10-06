@@ -35,6 +35,7 @@ public class PlayerController : MonoBehaviour
 
     // 동적 안전영역 관련
     private List<Vector2> currentBorderPolygon; // 현재 안전영역 폴리곤
+    private const float gridSize = 0.05f; // 그리드 크기
 
     void Start()
     {
@@ -112,10 +113,14 @@ public class PlayerController : MonoBehaviour
             // 방향 전환 감지 → 꼭지점 추가
             if (normalizedInput != previousInputDirection && previousInputDirection != Vector2.zero)
             {
-                // 방향이 바뀌었으므로 현재 위치를 꼭지점으로 추가
-                if (capturePath.Count == 0 || Vector3.Distance(transform.position, capturePath[capturePath.Count - 1]) >= 0.1f)
+                // 방향이 바뀔 때 현재 위치를 0.05 그리드에 스냅
+                Vector3 snappedCorner = SnapToGrid(transform.position);
+                transform.position = snappedCorner;
+
+                // 스냅된 위치를 꼭지점으로 추가
+                if (capturePath.Count == 0 || Vector3.Distance(snappedCorner, capturePath[capturePath.Count - 1]) >= 0.1f)
                 {
-                    capturePath.Add(transform.position);
+                    capturePath.Add(snappedCorner);
                 }
             }
 
@@ -546,12 +551,16 @@ public class PlayerController : MonoBehaviour
         if (currentState == PlayerState.OnSafeZone)
         {
             currentState = PlayerState.Capturing;
-            captureStartPosition = transform.position;
+
+            // 캡처 시작 위치를 0.05 그리드에 스냅
+            captureStartPosition = SnapToGrid(transform.position);
+            transform.position = captureStartPosition;
+
             capturePath.Clear();
             capturePath.Add(captureStartPosition);
             hasLeftSafeZone = false; // 초기화
             previousInputDirection = Vector2.zero; // 방향 초기화
-            Debug.Log("영역 점령 시작!");
+            Debug.Log($"영역 점령 시작! 시작 위치: {captureStartPosition}");
         }
     }
 
@@ -634,6 +643,14 @@ public class PlayerController : MonoBehaviour
         projection = Mathf.Clamp(projection, 0, lineLength);
 
         return lineStart + lineDirection * projection;
+    }
+
+    // 위치를 0.05 그리드에 스냅
+    Vector3 SnapToGrid(Vector3 position)
+    {
+        float x = Mathf.Round(position.x / gridSize) * gridSize;
+        float y = Mathf.Round(position.y / gridSize) * gridSize;
+        return new Vector3(x, y, 0);
     }
 
     // 플레이어 위치에서 가장 가까운 선분의 인덱스 찾기
