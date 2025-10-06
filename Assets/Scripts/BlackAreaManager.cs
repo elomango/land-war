@@ -332,4 +332,10 @@ public class BlackAreaManager : MonoBehaviour
             safeZoneManager.UpdateBorder(blackPolygon);
         }
     }
+
+    // 현재 검정 영역 폴리곤 반환 (안전영역 = 이 폴리곤의 테두리)
+    public List<Vector2> GetBorderPolygon()
+    {
+        return blackPolygon;
+    }
 }

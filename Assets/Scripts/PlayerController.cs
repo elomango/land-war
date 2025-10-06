@@ -25,20 +25,24 @@ public class PlayerController : MonoBehaviour
     private float halfWidth;
     private float halfHeight;
     private Vector3 originalScale;
-    private bool isMoving = false;
 
     // 영역 점령 관련
     private Vector3 captureStartPosition;
     private List<Vector3> capturePath = new List<Vector3>();
     private LineRenderer pathLine;
-    private bool spacePressed = false;
     private bool hasLeftSafeZone = false; // 안전지대를 벗어났는지 체크
+
+    // 동적 안전영역 관련
+    private List<Vector2> currentBorderPolygon; // 현재 안전영역 폴리곤
 
     void Start()
     {
         halfWidth = playAreaWidth / 2f;   // 5
         halfHeight = playAreaHeight / 2f; // 7
         originalScale = transform.localScale;
+
+        // 초기 폴리곤 데이터 가져오기
+        UpdateBorderPolygon();
 
         // LineRenderer 설정
         pathLine = gameObject.AddComponent<LineRenderer>();
@@ -83,12 +87,10 @@ public class PlayerController : MonoBehaviour
 
         if (input == Vector2.zero)
         {
-            isMoving = false;
             AnimatePulse();
         }
         else
         {
-            isMoving = true;
             transform.localScale = originalScale;
             MoveOnBorder(input);
         }
@@ -139,67 +141,44 @@ public class PlayerController : MonoBehaviour
     bool IsOnSafeZone(out Vector3 snappedPosition)
     {
         Vector3 pos = transform.position;
-        float x = pos.x;
-        float y = pos.y;
-
-        // 테두리에 닿았는지 체크 (약간의 오차 허용)
         float threshold = 0.15f;
 
-        // 4개 테두리까지의 거리 계산
-        float distBottom = Mathf.Abs(y - (-halfHeight));
-        float distTop = Mathf.Abs(y - halfHeight);
-        float distLeft = Mathf.Abs(x - (-halfWidth));
-        float distRight = Mathf.Abs(x - halfWidth);
-
-        // threshold 안에 있는 테두리 확인
-        bool onBottomEdge = distBottom < threshold;
-        bool onTopEdge = distTop < threshold;
-        bool onLeftEdge = distLeft < threshold;
-        bool onRightEdge = distRight < threshold;
-
-        // 테두리에 닿지 않음
-        if (!onBottomEdge && !onTopEdge && !onLeftEdge && !onRightEdge)
+        // 동적 폴리곤 기반 테두리 체크
+        if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
         {
             snappedPosition = pos;
             return false;
         }
 
-        // 스냅된 위치 계산 (가장 가까운 테두리로)
-        float snappedX = x;
-        float snappedY = y;
+        Vector2 pos2D = new Vector2(pos.x, pos.y);
+        float minDistance = float.MaxValue;
+        Vector2 closestPoint = pos2D;
 
-        // Y축 스냅 (상단/하단)
-        if (onBottomEdge && onTopEdge)
+        // 폴리곤의 모든 선분과의 거리 계산
+        for (int i = 0; i < currentBorderPolygon.Count; i++)
         {
-            // 둘 다 threshold 안에 있으면 더 가까운 쪽
-            snappedY = (distBottom < distTop) ? -halfHeight : halfHeight;
-        }
-        else if (onBottomEdge)
-        {
-            snappedY = -halfHeight;
-        }
-        else if (onTopEdge)
-        {
-            snappedY = halfHeight;
-        }
+            Vector2 p1 = currentBorderPolygon[i];
+            Vector2 p2 = currentBorderPolygon[(i + 1) % currentBorderPolygon.Count];
 
-        // X축 스냅 (좌측/우측)
-        if (onLeftEdge && onRightEdge)
-        {
-            // 둘 다 threshold 안에 있으면 더 가까운 쪽
-            snappedX = (distLeft < distRight) ? -halfWidth : halfWidth;
-        }
-        else if (onLeftEdge)
-        {
-            snappedX = -halfWidth;
-        }
-        else if (onRightEdge)
-        {
-            snappedX = halfWidth;
+            Vector2 closest = ClosestPointOnLineSegment(pos2D, p1, p2);
+            float distance = Vector2.Distance(pos2D, closest);
+
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestPoint = closest;
+            }
         }
 
-        snappedPosition = new Vector3(snappedX, snappedY, 0);
-        return true;
+        // threshold 안에 있으면 테두리에 있다고 판단
+        if (minDistance < threshold)
+        {
+            snappedPosition = new Vector3(closestPoint.x, closestPoint.y, 0);
+            return true;
+        }
+
+        snappedPosition = pos;
+        return false;
     }
 
     void CompleteCaptureTest(Vector3 snappedPosition)
@@ -216,6 +195,9 @@ public class PlayerController : MonoBehaviour
         if (BlackAreaManager.Instance != null)
         {
             BlackAreaManager.Instance.RemoveCapturedArea(capturePath);
+
+            // 폴리곤 데이터 업데이트 (2단계: 영역 점령 후 데이터 갱신)
+            UpdateBorderPolygon();
         }
 
         // 상태 복귀
@@ -402,8 +384,8 @@ public class PlayerController : MonoBehaviour
         Vector3 currentPos = transform.position;
         Vector3 targetPos = currentPos + (Vector3)direction * moveSpeed * Time.deltaTime;
 
-        // 어느 테두리에 있는지 판단하고 이동 제한
-        Vector3 newPos = ClampToBorder(currentPos, targetPos, direction);
+        // 동적 폴리곤 테두리를 따라 이동
+        Vector3 newPos = ClampToBorderDynamic(currentPos, targetPos, direction);
 
         transform.position = newPos;
     }
@@ -508,7 +490,6 @@ public class PlayerController : MonoBehaviour
     {
         if (currentState == PlayerState.OnSafeZone)
         {
-            spacePressed = true;
             currentState = PlayerState.Capturing;
             captureStartPosition = transform.position;
             capturePath.Clear();
@@ -518,12 +499,11 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // 스페이스 버튼/키 뗌 (UI 버튼에서 호출)
+    // 스페이스 버튼/키 뺌 (UI 버튼에서 호출)
     public void OnSpaceReleased()
     {
         if (currentState == PlayerState.Capturing)
         {
-            spacePressed = false;
             // 즉시 원위치로
             transform.position = captureStartPosition;
             currentState = PlayerState.OnSafeZone;
@@ -542,5 +522,202 @@ public class PlayerController : MonoBehaviour
     {
         capturePath.Clear();
         pathLine.positionCount = 0;
+    }
+
+    // ========== 동적 안전영역 관련 함수 ==========
+
+    void UpdateBorderPolygon()
+    {
+        if (BlackAreaManager.Instance != null)
+        {
+            currentBorderPolygon = BlackAreaManager.Instance.GetBorderPolygon();
+            Debug.Log($"폴리곤 데이터 업데이트: {currentBorderPolygon.Count}개 점");
+        }
+        else
+        {
+            Debug.LogWarning("BlackAreaManager.Instance가 없습니다.");
+        }
+    }
+
+    // 점에서 선분까지의 최단거리 점 계산
+    Vector2 ClosestPointOnLineSegment(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+    {
+        Vector2 line = lineEnd - lineStart;
+        float lineLength = line.magnitude;
+
+        if (lineLength < 0.001f)
+            return lineStart;
+
+        Vector2 lineDirection = line / lineLength;
+        Vector2 toPoint = point - lineStart;
+
+        float projection = Vector2.Dot(toPoint, lineDirection);
+        projection = Mathf.Clamp(projection, 0, lineLength);
+
+        return lineStart + lineDirection * projection;
+    }
+
+    // 플레이어 위치에서 가장 가까운 선분의 인덱스 찾기
+    int GetClosestEdgeIndex(Vector3 position)
+    {
+        if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
+        {
+            Debug.LogWarning("폴리곤 데이터가 없습니다.");
+            return -1;
+        }
+
+        Vector2 pos2D = new Vector2(position.x, position.y);
+        int closestEdgeIndex = -1;
+        float minDistance = float.MaxValue;
+
+        for (int i = 0; i < currentBorderPolygon.Count; i++)
+        {
+            Vector2 p1 = currentBorderPolygon[i];
+            Vector2 p2 = currentBorderPolygon[(i + 1) % currentBorderPolygon.Count];
+
+            Vector2 closest = ClosestPointOnLineSegment(pos2D, p1, p2);
+            float distance = Vector2.Distance(pos2D, closest);
+
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closestEdgeIndex = i;
+            }
+        }
+
+        return closestEdgeIndex;
+    }
+
+    // 동적 폴리곤 테두리를 따라 이동 (1-4: 선분 위 이동 + 1-5: 모서리 이동)
+    Vector3 ClampToBorderDynamic(Vector3 currentPos, Vector3 targetPos, Vector2 direction)
+    {
+        if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
+        {
+            Debug.LogWarning("폴리곤 데이터 없음");
+            return currentPos;
+        }
+
+        // 현재 가장 가까운 선분 찾기
+        int edgeIndex = GetClosestEdgeIndex(currentPos);
+        if (edgeIndex == -1)
+        {
+            Debug.LogWarning("선분을 찾을 수 없음");
+            return currentPos;
+        }
+
+        Vector2 p1 = currentBorderPolygon[edgeIndex];
+        Vector2 p2 = currentBorderPolygon[(edgeIndex + 1) % currentBorderPolygon.Count];
+
+        // 1-5: 모서리 체크 (꼭짓점 근처인지)
+        Vector2 currentPos2D = new Vector2(currentPos.x, currentPos.y);
+        float vertexThreshold = 0.05f;
+
+        bool atVertex1 = Vector2.Distance(currentPos2D, p1) < vertexThreshold;
+        bool atVertex2 = Vector2.Distance(currentPos2D, p2) < vertexThreshold;
+
+        if (atVertex1 || atVertex2)
+        {
+            // 모서리에 있으면 방향에 따라 인접 선분으로 전환 가능
+            Vector2 targetVertex = atVertex1 ? p1 : p2;
+            int vertexIndex = atVertex1 ? edgeIndex : (edgeIndex + 1) % currentBorderPolygon.Count;
+
+            // 이동 방향에 맞는 선분 선택
+            int newEdgeIndex = SelectEdgeByDirection(vertexIndex, direction, atVertex1);
+
+            if (newEdgeIndex != -1 && newEdgeIndex != edgeIndex)
+            {
+                edgeIndex = newEdgeIndex;
+                p1 = currentBorderPolygon[edgeIndex];
+                p2 = currentBorderPolygon[(edgeIndex + 1) % currentBorderPolygon.Count];
+
+                // 선분 전환 후 다시 모서리 체크
+                atVertex1 = Vector2.Distance(currentPos2D, p1) < vertexThreshold;
+                atVertex2 = Vector2.Distance(currentPos2D, p2) < vertexThreshold;
+            }
+        }
+
+        // 1-4: targetPos를 현재 선분 위로 클램프
+        Vector2 targetPos2D = new Vector2(targetPos.x, targetPos.y);
+        Vector2 clampedPos2D = ClosestPointOnLineSegment(targetPos2D, p1, p2);
+
+        return new Vector3(clampedPos2D.x, clampedPos2D.y, 0);
+    }
+
+    // 1-5: 꼭짓점에서 이동 방향에 맞는 선분 선택
+    int SelectEdgeByDirection(int vertexIndex, Vector2 direction, bool isAtStartVertex)
+    {
+        if (currentBorderPolygon == null || currentBorderPolygon.Count < 2)
+            return -1;
+
+        // 해당 꼭짓점에 연결된 두 선분
+        int prevEdge = (vertexIndex - 1 + currentBorderPolygon.Count) % currentBorderPolygon.Count;
+        int nextEdge = vertexIndex;
+
+        Vector2 vertex = currentBorderPolygon[vertexIndex];
+
+        // 이전 선분 방향
+        Vector2 prevP1 = currentBorderPolygon[prevEdge];
+        Vector2 prevP2 = vertex;  // prevEdge의 끝점 = 현재 vertex
+        Vector2 prevDirForward = (prevP2 - prevP1).normalized;   // 정방향
+        Vector2 prevDirBackward = (prevP1 - prevP2).normalized;  // 역방향
+
+        // 다음 선분 방향
+        Vector2 nextP1 = vertex;  // nextEdge의 시작점 = 현재 vertex
+        Vector2 nextP2 = currentBorderPolygon[(nextEdge + 1) % currentBorderPolygon.Count];
+        Vector2 nextDirForward = (nextP2 - nextP1).normalized;   // 정방향
+        Vector2 nextDirBackward = (nextP1 - nextP2).normalized;  // 역방향
+
+        // 이동 방향과의 내적 계산
+        float dotPrevForward = Vector2.Dot(direction, prevDirForward);
+        float dotPrevBackward = Vector2.Dot(direction, prevDirBackward);
+        float dotNextForward = Vector2.Dot(direction, nextDirForward);
+        float dotNextBackward = Vector2.Dot(direction, nextDirBackward);
+
+        // isAtStartVertex=true: 현재 선분의 시작점(p1) 근처
+        // -> prevEdge의 끝점에 있으므로, prevEdge를 역방향으로 타거나 nextEdge를 정방향으로 탈 수 있음
+        if (isAtStartVertex)
+        {
+            // 가장 큰 내적값 찾기
+            if (dotPrevBackward > dotNextForward && dotPrevBackward > 0.1f)
+            {
+                return prevEdge;
+            }
+            else if (dotNextForward > 0.1f)
+            {
+                return nextEdge;
+            }
+            // 둘 다 안 맞으면 덜 역방향인 쪽 선택
+            else if (dotPrevBackward > dotNextForward)
+            {
+                return prevEdge;
+            }
+            else
+            {
+                return nextEdge;
+            }
+        }
+        // isAtStartVertex=false: 현재 선분의 끝점(p2) 근처
+        // -> nextEdge의 시작점에 있으므로, nextEdge를 정방향으로 타거나 prevEdge를 역방향으로 탈 수 있음
+        else
+        {
+            // 가장 큰 내적값 찾기
+            if (dotNextForward > dotPrevBackward && dotNextForward > 0.1f)
+            {
+                return nextEdge;
+            }
+            else if (dotPrevBackward > 0.1f)
+            {
+                return prevEdge;
+            }
+            // 둘 다 안 맞으면 덜 역방향인 쪽 선택
+            else if (dotNextForward > dotPrevBackward)
+            {
+                return nextEdge;
+            }
+            else
+            {
+                return prevEdge;
+            }
+        }
     }
 }

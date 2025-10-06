@@ -12,6 +12,11 @@ public class SafeZoneManager : MonoBehaviour
     void Start()
     {
         lineRenderer = GetComponent<LineRenderer>();
+        lineRenderer.alignment = LineAlignment.TransformZ;
+        lineRenderer.numCornerVertices = 0;
+        lineRenderer.numCapVertices = 0;
+        lineRenderer.useWorldSpace = true;  // 월드 좌표 사용
+
         InitializeBorder();
     }
 
@@ -45,6 +50,9 @@ public class SafeZoneManager : MonoBehaviour
             return;
         }
 
+        Debug.Log("=== UpdateBorder 호출 ===");
+        Debug.Log($"변경 전 - alignment: {lineRenderer.alignment}, cornerVertices: {lineRenderer.numCornerVertices}, useWorldSpace: {lineRenderer.useWorldSpace}");
+
         // Vector2 → Vector3 변환 (닫힌 폴리곤으로)
         Vector3[] borderPoints = new Vector3[polygonPoints.Count + 1];
         for (int i = 0; i < polygonPoints.Count; i++)
@@ -55,9 +63,27 @@ public class SafeZoneManager : MonoBehaviour
         borderPoints[polygonPoints.Count] = new Vector3(polygonPoints[0].x, polygonPoints[0].y, 0);
 
         // LineRenderer 업데이트
+        lineRenderer.alignment = LineAlignment.TransformZ;
+        lineRenderer.numCornerVertices = 0;
+        lineRenderer.numCapVertices = 0;
+        lineRenderer.useWorldSpace = true;
+
         lineRenderer.positionCount = borderPoints.Length;
         lineRenderer.SetPositions(borderPoints);
 
-        Debug.Log($"안전지대 테두리 업데이트 완료: {polygonPoints.Count}개 점");
+        Debug.Log($"변경 후 - alignment: {lineRenderer.alignment}, cornerVertices: {lineRenderer.numCornerVertices}, useWorldSpace: {lineRenderer.useWorldSpace}");
+
+        // widthCurve 확인
+        Debug.Log($"widthCurve - 시작(0): {lineRenderer.widthCurve.Evaluate(0)}, 중간(0.5): {lineRenderer.widthCurve.Evaluate(0.5f)}, 끝(1): {lineRenderer.widthCurve.Evaluate(1)}");
+
+        // 왼쪽 테두리 점들 확인 (x좌표가 거의 같아야 함)
+        Debug.Log("왼쪽 테두리 점들:");
+        for (int i = 0; i < Mathf.Min(10, polygonPoints.Count); i++)
+        {
+            if (polygonPoints[i].x < -4.5f)  // 왼쪽 테두리 근처
+            {
+                Debug.Log($"  점 {i}: ({polygonPoints[i].x:F4}, {polygonPoints[i].y:F4})");
+            }
+        }
     }
 }
