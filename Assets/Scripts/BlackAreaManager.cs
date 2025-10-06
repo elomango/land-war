@@ -316,12 +316,18 @@ public class BlackAreaManager : MonoBehaviour
             resultPoly.Reverse();
         }
 
-        // Clipper2 PathD → Unity Vector2 변환
+        // Clipper2 PathD → Unity Vector2 변환 (0.05 grid에 스냅)
         blackPolygon.Clear();
+        float gridSize = 0.05f;
         foreach (var point in resultPoly)
         {
-            blackPolygon.Add(new Vector2((float)point.x, (float)point.y));
+            float x = Mathf.Round((float)point.x / gridSize) * gridSize;
+            float y = Mathf.Round((float)point.y / gridSize) * gridSize;
+            blackPolygon.Add(new Vector2(x, y));
         }
+
+        // 중복/근접 점 제거
+        RemoveDuplicatePoints(blackPolygon, gridSize * 0.5f);
 
         GenerateMesh();
         Debug.Log($"영역 제거 완료! 남은 점: {blackPolygon.Count}개");
@@ -337,5 +343,34 @@ public class BlackAreaManager : MonoBehaviour
     public List<Vector2> GetBorderPolygon()
     {
         return blackPolygon;
+    }
+
+    // 중복/근접 점 제거
+    void RemoveDuplicatePoints(List<Vector2> polygon, float threshold)
+    {
+        if (polygon.Count < 2) return;
+
+        for (int i = polygon.Count - 1; i > 0; i--)
+        {
+            Vector2 current = polygon[i];
+            Vector2 prev = polygon[i - 1];
+
+            // 연속된 점이 매우 가까우면 제거
+            if (Vector2.Distance(current, prev) < threshold)
+            {
+                polygon.RemoveAt(i);
+            }
+        }
+
+        // 마지막 점과 첫 점도 체크 (닫힌 폴리곤)
+        if (polygon.Count >= 2)
+        {
+            Vector2 first = polygon[0];
+            Vector2 last = polygon[polygon.Count - 1];
+            if (Vector2.Distance(first, last) < threshold)
+            {
+                polygon.RemoveAt(polygon.Count - 1);
+            }
+        }
     }
 }
