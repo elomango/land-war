@@ -387,12 +387,6 @@ public class PlayerController : MonoBehaviour
         {
             capturePath.Add(point);
         }
-
-        // capturePath[0]도 조정된 startPos로 업데이트 (닫힌 폴리곤)
-        if (capturePath.Count > 0)
-        {
-            capturePath[0] = startPos;
-        }
     }
 
     // 주어진 위치가 어느 선분에 있는지 찾기
